@@ -185,6 +185,7 @@ function DashboardPage() {
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-wider text-teal-700">#{index + 1} · {Math.round(recommendation.finalScore * 100)}% match</p>
                         <h3 className="mt-1 font-semibold text-slate-900">{recommendation.schemeName}</h3>
+                        <p className="mt-1 text-xs text-slate-600">{recommendation.explanation.find((line) => line.startsWith("Why are you eligible?"))?.replace("Why are you eligible?", "").trim()}</p>
                         <p className="mt-1 text-xs text-slate-600">Matched fields: {recommendation.matchedRules.join(", ") || "None"}</p>
                         <p className="mt-2 text-sm leading-5 text-slate-600"><span className="font-semibold text-slate-800">About this Scheme: </span>{aboutScheme(recommendation.explanation)}</p>
                       </div>

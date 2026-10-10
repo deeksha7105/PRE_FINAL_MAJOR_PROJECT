@@ -10,6 +10,7 @@ import { evaluateSchemeEligibility } from './services/ruleEngine.js';
 
 import { rankEligibleScheme } from './services/recommendationRanking.js';
 import { getTfIdfRecommendations } from './TF_IDF/tfidfRecommendation.js';
+import { getSemanticSimilarity } from './services/semanticSimilarity.js';
 
  
 
@@ -184,7 +185,7 @@ function normalizeUser(user) {
 
  
 
-function buildRecommendationRecord(user, scheme, ruleEvaluation) {
+function buildRecommendationRecord(user, scheme, ruleEvaluation, textScores = {}) {
 
   const matchedRules = ruleEvaluation.ruleDetails
     .filter((rule) => rule.applicable && rule.eligible)
@@ -207,7 +208,7 @@ function buildRecommendationRecord(user, scheme, ruleEvaluation) {
 
  
 
-  const ranking = rankEligibleScheme(user, scheme, ruleEvaluation);
+  const ranking = rankEligibleScheme(user, scheme, ruleEvaluation, textScores);
 
  
 
@@ -412,6 +413,11 @@ app.get('/api/recommend/:userId', async (req, res) => {
 
  
 
+    // Compute text signals after eligibility only. They cannot introduce an
+    // ineligible scheme into the response.
+    const tfidfResults = getTfIdfRecommendations(normalizedUser, eligibleSchemes, eligibleSchemes.length).recommendations;
+    const tfidfById = new Map(tfidfResults.map((item) => [item.schemeId, item.similarityScore]));
+
     const recommendations = eligibleSchemes
 
       .map((scheme) => {
@@ -422,7 +428,15 @@ app.get('/api/recommend/:userId', async (req, res) => {
 
           scheme,
 
-          scheme.ruleEvaluation
+          scheme.ruleEvaluation,
+
+          {
+
+            semanticSimilarity: getSemanticSimilarity(normalizedUser, scheme),
+
+            tfidfSimilarity: tfidfById.get(String(scheme._id)) || 0,
+
+          }
 
         );
 
@@ -472,15 +486,19 @@ app.get('/api/recommend/:userId/tfidf', async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     const schemes = await schemeCollection.find({}).toArray();
-    const result = getTfIdfRecommendations(normalizeUser(user), schemes, topK);
+    const normalizedUser = normalizeUser(user);
+    // Keep the diagnostic TF-IDF endpoint behind the same eligibility gate as
+    // the hybrid endpoint; it must not display ineligible schemes either.
+    const eligibleSchemes = schemes.filter((scheme) => evaluateSchemeEligibility(normalizedUser, scheme).eligible);
+    const result = getTfIdfRecommendations(normalizedUser, eligibleSchemes, topK);
 
     return res.json({
-      user: { name: normalizeUser(user).name || 'User' },
+      user: { name: normalizedUser.name || 'User' },
       recommendedSchemes: result.recommendations,
       statistics: {
         users: await userCollection.countDocuments(),
         schemes: schemes.length,
-        userSchemeComparisons: schemes.length,
+        userSchemeComparisons: eligibleSchemes.length,
         ...result.statistics,
       },
     });
